@@ -118,6 +118,10 @@ public class CodeGenerator<T> {
     return new Builder<T>(type);
   }
 
+  public Identifiers.WithIdentifier getIdentifier() {
+    return Identifiers.withIdentifier(identifier);
+  }
+
   /**
    * Generate one or more items
    * 
@@ -128,26 +132,26 @@ public class CodeGenerator<T> {
     //Function like skip, onSkip, writer etc may need to access the specified Identifier.
     //So, let's wrap all code that may need the identifier into a lambda and ensure that the Identifiers is accessible to the lambda
     //using Indentifiers.getIdentifier().
-    return Identifiers.withIdentifier(identifier).call(() -> {
-      for (T item : items) {
-        String id = identifier.apply(item);
-        if (skip.test(item)) {
-          onSkip.accept(item);
-          continue;
-        }
-        //Only generate each file once ...
-        if (generated.contains(id)) {
-          continue;
-        }
-        try (Writer writer = output.apply(item)) {
-          writer.write(renderer.apply(item));
-          generated.add(id);
-        } catch (IOException e) {
-          return false;
-        }
+    // return Identifiers.withIdentifier(identifier).call(() -> {
+    for (T item : items) {
+      String id = identifier.apply(item);
+      if (skip.test(item)) {
+        onSkip.accept(item);
+        continue;
       }
-      return true;
-    });
+      //Only generate each file once ...
+      if (generated.contains(id)) {
+        continue;
+      }
+      try (Writer writer = output.apply(item)) {
+        writer.write(renderer.apply(item));
+        generated.add(id);
+      } catch (IOException e) {
+        return false;
+      }
+    }
+    return true;
+    // });
 
   }
 }

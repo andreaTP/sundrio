@@ -63,25 +63,27 @@ public abstract class AbstractBuilderProcessor extends AbstractCodeGeneratingPro
   void generateLocalDependenciesIfNeeded() {
     BuilderContext context = BuilderContextManager.getContext();
     try {
-      if (context.getGenerateBuilderPackage() && !Constants.DEFAULT_BUILDER_PACKAGE.equals(context.getBuilderPackage())) {
+      generator.getIdentifier().call(() -> {
+        if (context.getGenerateBuilderPackage() && !Constants.DEFAULT_BUILDER_PACKAGE.equals(context.getBuilderPackage())) {
+          generate(context.getVisitableInterface());
+          generate(context.getVisitorInterface());
+          generate(context.getTypedVisitorInterface());
+          generate(context.getPathAwareVisitorClass());
 
-        generate(context.getVisitableInterface());
-        generate(context.getVisitorInterface());
-        generate(context.getTypedVisitorInterface());
-        generate(context.getPathAwareVisitorClass());
+          generate(context.getVisitableBuilderInterface());
+          generate(context.getVisitableMapClass());
+          generate(context.getBuilderInterface());
+          generate(context.getFluentInterface());
+          generate(context.getBaseFluentClass());
+          generate(context.getNestedInterface());
+          generate(context.getEditableInterface());
+        }
 
-        generate(context.getVisitableBuilderInterface());
-        generate(context.getVisitableMapClass());
-        generate(context.getBuilderInterface());
-        generate(context.getFluentInterface());
-        generate(context.getBaseFluentClass());
-        generate(context.getNestedInterface());
-        generate(context.getEditableInterface());
-      }
-
-      if (context.isValidationEnabled() && !classExists(context.getBuilderPackage() + ".ValidationUtils")) {
-        generate(context.getValidationUtils());
-      }
+        if (context.isValidationEnabled() && !classExists(context.getBuilderPackage() + ".ValidationUtils")) {
+          generate(context.getValidationUtils());
+        }
+        return null;
+      });
     } catch (Exception e) {
       //
     }
@@ -204,41 +206,52 @@ public abstract class AbstractBuilderProcessor extends AbstractCodeGeneratingPro
   }
 
   public void generateBuildables(BuilderContext ctx, Set<TypeDef> buildables) {
-    int total = ctx.getBuildableRepository().getBuildables().size();
-    int count = 0;
+    List<TypeDef> toBeGenerated = new ArrayList<>();
     for (TypeDef typeDef : buildables) {
       RichTypeDef richTypeDef = TypeArguments.apply(typeDef);
-      double percentage = 100d * (count++) / total;
+      // double percentage = 100d * (count++) / total;
       if (typeDef.isInterface() || typeDef.isAnnotation()) {
         continue;
       }
-      System.err.printf("\033[2K%3d%% Generating: %s\r", Math.round(percentage), typeDef.getFullyQualifiedName());
-      generate(ClazzAs.FLUENT_INTERFACE.apply(richTypeDef));
-      generate(ClazzAs.FLUENT_IMPL.apply(richTypeDef));
+      // System.err.printf("\033[2K%3d%% Generating: %s\r", Math.round(percentage), typeDef.getFullyQualifiedName());
+      toBeGenerated.add(ClazzAs.FLUENT_INTERFACE.apply(richTypeDef));
+      //generate(ClazzAs.FLUENT_INTERFACE.apply(richTypeDef));
+      toBeGenerated.add(ClazzAs.FLUENT_IMPL.apply(richTypeDef));
+      //generate(ClazzAs.FLUENT_IMPL.apply(richTypeDef));
       if (typeDef.isAbstract()) {
         continue;
       }
 
       if (!typeDef.isFinal() && typeDef.getAttributes().containsKey(EDITABLE_ENABLED)
           && (Boolean) typeDef.getAttributes().get(EDITABLE_ENABLED)) {
-        generate(ClazzAs.EDITABLE_BUILDER.apply(richTypeDef));
-        generate(ClazzAs.EDITABLE.apply(richTypeDef));
+        toBeGenerated.add(ClazzAs.EDITABLE_BUILDER.apply(richTypeDef));
+        // generate(ClazzAs.EDITABLE_BUILDER.apply(richTypeDef));
+        toBeGenerated.add(ClazzAs.EDITABLE.apply(richTypeDef));
+        // generate(ClazzAs.EDITABLE.apply(richTypeDef));
       } else {
-        generate(ClazzAs.BUILDER.apply(richTypeDef));
+        toBeGenerated.add(ClazzAs.BUILDER.apply(richTypeDef));
+        // generate(ClazzAs.BUILDER.apply(richTypeDef));
       }
 
       Buildable buildable = typeDef.getAttribute(BUILDABLE);
       ExternalBuildables externalBuildables = typeDef.getAttribute(EXTERNAL_BUILDABLE);
       if (buildable != null) {
         for (final Inline inline : buildable.inline()) {
-          generate(inlineableOf(ctx, typeDef, inline));
+          toBeGenerated.add(inlineableOf(ctx, typeDef, inline));
+          // generate(inlineableOf(ctx, typeDef, inline));
         }
       } else if (externalBuildables != null) {
         for (final Inline inline : externalBuildables.inline()) {
-          generate(inlineableOf(ctx, typeDef, inline));
+          toBeGenerated.add(inlineableOf(ctx, typeDef, inline));
+          // generate(inlineableOf(ctx, typeDef, inline));
         }
       }
     }
+
+    generator.getIdentifier().call(() -> {
+      toBeGenerated.parallelStream().forEach(td -> generate(td));
+      return null;
+    });
   }
 
   /**
@@ -250,34 +263,37 @@ public abstract class AbstractBuilderProcessor extends AbstractCodeGeneratingPro
   public void generatePojos(BuilderContext builderContext, Set<TypeDef> buildables) {
     Set<TypeDef> additonalBuildables = new HashSet<>();
     Set<TypeDef> additionalTypes = new HashSet<>();
-    for (TypeDef typeDef : buildables) {
-      RichTypeDef richTypeDef = TypeArguments.apply(typeDef);
-      if (typeDef.isInterface() || typeDef.isAnnotation()) {
-        typeDef = ClazzAs.POJO.apply(richTypeDef);
-        builderContext.getDefinitionRepository().register(typeDef);
-        builderContext.getBuildableRepository().register(typeDef);
-        generate(typeDef);
-        additonalBuildables.add(typeDef);
+    generator.getIdentifier().call(() -> {
+      for (TypeDef typeDef : buildables) {
+        RichTypeDef richTypeDef = TypeArguments.apply(typeDef);
+        if (typeDef.isInterface() || typeDef.isAnnotation()) {
+          typeDef = ClazzAs.POJO.apply(richTypeDef);
+          builderContext.getDefinitionRepository().register(typeDef);
+          builderContext.getBuildableRepository().register(typeDef);
+          generate(typeDef);
+          additonalBuildables.add(typeDef);
 
-        if (typeDef.hasAttribute(ADDITIONAL_BUILDABLES)) {
-          for (TypeDef also : typeDef.getAttribute(ADDITIONAL_BUILDABLES)) {
-            builderContext.getDefinitionRepository().register(also);
-            builderContext.getBuildableRepository().register(also);
-            generate(also);
-            additonalBuildables.add(also);
+          if (typeDef.hasAttribute(ADDITIONAL_BUILDABLES)) {
+            for (TypeDef also : typeDef.getAttribute(ADDITIONAL_BUILDABLES)) {
+              builderContext.getDefinitionRepository().register(also);
+              builderContext.getBuildableRepository().register(also);
+              generate(also);
+              additonalBuildables.add(also);
+            }
           }
-        }
 
-        if (typeDef.hasAttribute(ADDITIONAL_TYPES)) {
-          for (TypeDef also : typeDef.getAttribute(ADDITIONAL_TYPES)) {
-            builderContext.getDefinitionRepository().register(also);
-            generate(also);
-            additionalTypes.add(also);
+          if (typeDef.hasAttribute(ADDITIONAL_TYPES)) {
+            for (TypeDef also : typeDef.getAttribute(ADDITIONAL_TYPES)) {
+              builderContext.getDefinitionRepository().register(also);
+              generate(also);
+              additionalTypes.add(also);
+            }
           }
         }
       }
-    }
-    generateBuildables(builderContext, additonalBuildables);
+      generateBuildables(builderContext, additonalBuildables);
+      return null;
+    });
   }
 
   private static final String EMPTY_FUNCTION_TEXT = loadResourceQuietly(EMPTY_FUNCTION_SNIPPET);

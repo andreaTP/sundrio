@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.nio.file.Paths;
+import java.util.ConcurrentModificationException;
 import java.util.function.Function;
 
 import javax.annotation.processing.Filer;
@@ -61,10 +62,15 @@ public class TypeDefAptOutput implements Output<TypeDef> {
             .orElseThrow(() -> new IllegalStateException("Cannot extract fully qualified name from generated code."));
         String fqcn = Strings.isNullOrEmpty(pkg) ? name : pkg + "." + name;
 
-        FileObject fileObject = filer.getResource(StandardLocation.SOURCE_OUTPUT, pkg, name + ".java");
-        File file = Paths.get(fileObject.toUri()).toFile();
-        //If file exists just send output to /dev/null
-        return file.exists() ? DEV_NULL : filer.createSourceFile(fqcn).openWriter();
+        try {
+          FileObject fileObject = filer.getResource(StandardLocation.SOURCE_OUTPUT, pkg, name + ".java");
+          File file = Paths.get(fileObject.toUri()).toFile();
+          //If file exists just send output to /dev/null
+          return file.exists() ? DEV_NULL : filer.createSourceFile(fqcn).openWriter();
+        } catch (ConcurrentModificationException cme) {
+          System.out.println("************** -> concurrency issue? retry on: " + type.getFullyQualifiedName());
+          return getFunction().apply(type);
+        }
       } catch (IOException e) {
         throw SundrException.launderThrowable(e);
       }

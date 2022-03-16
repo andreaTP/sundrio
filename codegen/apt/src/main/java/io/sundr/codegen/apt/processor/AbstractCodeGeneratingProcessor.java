@@ -47,7 +47,7 @@ public abstract class AbstractCodeGeneratingProcessor extends AbstractProcessor 
 
   public void generate(TypeDef type) {
     if (generator == null) {
-      throw new IllegalStateException("CodeGenerator instance shoud not be null.");
+      throw new IllegalStateException("CodeGenerator instance should not be null.");
     }
     generator.generate(type);
   }
